@@ -31,6 +31,7 @@ groups/whatsapp_assistant/features/todo-list/*
 # Secrets
 *.keys.json
 .env
+*.pem
 
 # Temp files
 .tmp-*
