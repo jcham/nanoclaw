@@ -4,6 +4,7 @@ import path from 'path';
 import {
   ASSISTANT_NAME,
   CREDENTIAL_PROXY_PORT,
+  GROUPS_DIR,
   IDLE_TIMEOUT,
   POLL_INTERVAL,
   TIMEZONE,
@@ -43,7 +44,7 @@ import {
   storeMessage,
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
-import { resolveGroupFolderPath } from './group-folder.js';
+import { isValidGroupFolder, resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import {
@@ -119,6 +120,49 @@ function registerGroup(jid: string, group: RegisteredGroup): void {
   );
 }
 
+function autoRegisterGroup(chatJid: string, senderName: string): boolean {
+  if (registeredGroups[chatJid]) return false;
+  if (!chatJid.endsWith('@s.whatsapp.net')) return false;
+
+  const phone = chatJid.split('@')[0];
+  const folder = `whatsapp_${phone}_assistant`;
+
+  if (!isValidGroupFolder(folder)) {
+    logger.warn(
+      { chatJid, folder },
+      'Auto-registration skipped: invalid folder name',
+    );
+    return false;
+  }
+
+  const templateClaudeMd = path.join(GROUPS_DIR, '_template', 'CLAUDE.md');
+  const destClaudeMd = path.join(GROUPS_DIR, folder, 'CLAUDE.md');
+
+  try {
+    fs.mkdirSync(path.join(GROUPS_DIR, folder), { recursive: true });
+    if (fs.existsSync(templateClaudeMd)) {
+      fs.copyFileSync(templateClaudeMd, destClaudeMd);
+    }
+  } catch (err) {
+    logger.error({ chatJid, folder, err }, 'Failed to create group folder');
+    return false;
+  }
+
+  registerGroup(chatJid, {
+    name: senderName || phone,
+    folder,
+    trigger: ASSISTANT_NAME,
+    added_at: new Date().toISOString(),
+    requiresTrigger: true,
+    isMain: false,
+  });
+
+  logger.info(
+    { chatJid, folder, senderName },
+    'Auto-registered new personal assistant group',
+  );
+  return true;
+}
 
 /**
  * Get available groups list for the agent.
@@ -547,6 +591,22 @@ async function main(): Promise<void> {
           logger.error({ err, chatJid }, 'Remote control command error'),
         );
         return;
+      }
+
+      // Auto-register unregistered DM senders who trigger the assistant
+      if (
+        !registeredGroups[chatJid] &&
+        !msg.is_from_me &&
+        !msg.is_bot_message &&
+        chatJid.endsWith('@s.whatsapp.net') &&
+        TRIGGER_PATTERN.test(msg.content.trim())
+      ) {
+        const wasCreated = autoRegisterGroup(chatJid, msg.sender_name);
+        if (wasCreated) {
+          storeMessage(msg);
+          queue.enqueueMessageCheck(chatJid);
+          return;
+        }
       }
 
       // Sender allowlist drop mode: discard messages from denied senders before storing
