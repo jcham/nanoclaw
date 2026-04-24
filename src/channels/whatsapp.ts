@@ -11,6 +11,7 @@ import makeWASocket, {
   normalizeMessageContent,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
+import pino from 'pino';
 
 import {
   ASSISTANT_HAS_OWN_NUMBER,
@@ -28,6 +29,8 @@ import {
 import { registerChannel, ChannelOpts } from './registry.js';
 
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const baileysLogger = pino({ level: 'silent' });
 
 export interface WhatsAppChannelOpts {
   onMessage: OnInboundMessage;
@@ -80,10 +83,10 @@ export class WhatsAppChannel implements Channel {
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, logger),
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
       },
       printQRInTerminal: false,
-      logger,
+      logger: baileysLogger,
       browser: Browsers.macOS('Chrome'),
       keepAliveIntervalMs: KEEPALIVE_INTERVAL_MS,
     });
