@@ -22,8 +22,12 @@ groups/*
 
 # Secrets
 *.keys.json
+*.pem
 .env
 .env*
+
+# Claude Code per-user local settings
+.claude/settings.local.json
 
 # Temp files
 .tmp-*
